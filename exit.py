@@ -67,7 +67,6 @@ if __name__ == '__main__':
       return parsed['value']
     else:
       logger.warn("Unknown type {type}.".format(type=type))
-      print(parsed)
 
   ips_to_never_proxy = convert_value(find_assignment_to(parsed_proxy_pac, 'ips_to_never_proxy'))
   shexps_to_never_proxy = convert_value(find_assignment_to(parsed_proxy_pac, 'shexps_to_never_proxy'))
