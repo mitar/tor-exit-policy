@@ -74,16 +74,57 @@ if __name__ == '__main__':
   domains_to_proxy = convert_value(find_assignment_to(parsed_proxy_pac, 'domains_to_proxy'))
   shexps_to_proxy = convert_value(find_assignment_to(parsed_proxy_pac, 'shexps_to_proxy'))
 
+  # Some DNS entries resolve to invalid addresses. Filter some of them out.
+  def valid_address(address):
+    return not (address.is_multicast or address.is_private or address.is_reserved or address.is_loopback or address.is_link_local)
+
   def rejected_addresses():
-    tor_exit_policy_reject_ipv4 = []
-    tor_exit_policy_reject_ipv6 = []
+    addresses_ipv4 = [
+      # OVH
+      ipaddress.IPv4Network('5.39.0.0/17'),
+      ipaddress.IPv4Network('158.69.0.0/16'),
+      # Akamai Technologies
+      ipaddress.IPv4Network('23.32.0.0/11'),
+      ipaddress.IPv4Network('23.64.0.0/14'),
+      ipaddress.IPv4Network('23.72.0.0/13'),
+      ipaddress.IPv4Network('23.192.0.0/11'),
+      ipaddress.IPv4Network('23.195.112.0/20'),
+      ipaddress.IPv4Network('96.6.0.0/15'),
+      ipaddress.IPv4Network('104.64.0.0/10'),
+      ipaddress.IPv4Network('184.24.0.0/13'),
+      # Amazon Technologies
+      ipaddress.IPv4Network('34.192.0.0/10'),
+      ipaddress.IPv4Network('50.16.0.0/14'),
+      ipaddress.IPv4Network('52.0.0.0/11'),
+      ipaddress.IPv4Network('52.32.0.0/11'),
+      ipaddress.IPv4Network('54.64.0.0/11'),
+      ipaddress.IPv4Network('52.84.0.0/14'),
+      ipaddress.IPv4Network('52.88.0.0/13'),
+      ipaddress.IPv4Network('52.192.0.0/11'),
+      ipaddress.IPv4Network('54.208.0.0/12'),
+      ipaddress.IPv4Network('54.224.0.0/12'),
+      # Linode
+      ipaddress.IPv4Network('45.33.0.0/17'),
+      # Leaseweb
+      ipaddress.IPv4Network('162.210.192.0/21'),
+      # Google
+      ipaddress.IPv4Network('216.58.192.0/19'),
+      # Incapsula
+      ipaddress.IPv4Network('192.230.64.0/18'),
+    ]
+    addresses_ipv6 = [
+      # Pantheon
+      ipaddress.IPv6Network('2620:12A:8000::/44'),
+      # Incapsula
+      ipaddress.IPv6Network('2a02:e980::/29'),
+    ]
 
     # We add both entries to proxy and entries not to proxy to the reject policy.
     # We do not want to allow tor exit to any of those Internet addresses.
 
     for address, mask in ips_to_never_proxy:
       # Two-tuple form for the address constructor parameter was added in Python 3.5.
-      tor_exit_policy_reject_ipv4.append(ipaddress.IPv4Network((address, mask)))
+      addresses_ipv4.append(ipaddress.IPv4Network((address, mask)))
 
     domains = []
     for shexps in shexps_to_never_proxy:
@@ -93,22 +134,20 @@ if __name__ == '__main__':
     domains += domains_to_proxy
 
     with multiprocessing.Pool(PARALLELISM) as pool:
+      # We have to flatten resolved addresses.
       addresses = [address for resolved_addresses in pool.imap_unordered(resolve_domain, domains) for address in resolved_addresses]
 
-    tor_exit_policy_reject_ipv4 += [address for address in addresses if isinstance(address, ipaddress.IPv4Network)]
-    tor_exit_policy_reject_ipv6 += [address for address in addresses if isinstance(address, ipaddress.IPv6Network)]
+    addresses_ipv4 += [address for address in addresses if isinstance(address, ipaddress.IPv4Network)]
+    addresses_ipv6 += [address for address in addresses if isinstance(address, ipaddress.IPv6Network)]
+    
+    addresses_ipv4 = [address.supernet(new_prefix=24) if address.prefixlen > 24 else address for address in addresses_ipv4]
+    addresses_ipv6 = [address.supernet(new_prefix=48) if address.prefixlen > 48 else address for address in addresses_ipv6]
 
-    for address in sorted(ipaddress.collapse_addresses(tor_exit_policy_reject_ipv4)):
-      # Some DNS entries resolve to invalid addresses. Filter some of them out.
-      if address.is_multicast or address.is_private or address.is_reserved or address.is_loopback or address.is_link_local:
-        continue
-      yield address
+    # Collapse and filter addresses.
+    addresses_ipv4 = [address for address in ipaddress.collapse_addresses(addresses_ipv4) if valid_address(address)]
+    addresses_ipv6 = [address for address in ipaddress.collapse_addresses(addresses_ipv6) if valid_address(address)]
 
-    for address in sorted(ipaddress.collapse_addresses(tor_exit_policy_reject_ipv6)):
-      # Some DNS entries resolve to invalid addresses. Filter some of them out.
-      if address.is_multicast or address.is_private or address.is_reserved or address.is_loopback or address.is_link_local:
-        continue
-      yield address
+    return sorted(addresses_ipv4) + sorted(addresses_ipv6)
 
   for address in rejected_addresses():
     if isinstance(address, ipaddress.IPv4Network):
