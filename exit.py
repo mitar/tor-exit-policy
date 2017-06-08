@@ -27,6 +27,47 @@ def resolve_domain(hostname):
 
   return result
 
+def resolve_networks(addresses):
+  content = '\n'.join((
+    'begin',
+    'prefix',
+    'noasname',
+    'noheader',
+    'noallocdate',
+    'noregistry',
+    'noasnumber',
+    'nocountrycode',
+  ))
+
+  content += '\n' + '\n'.join([str(address.network_address) for address in addresses]) + '\nend\n'
+
+  with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+    s.connect(('whois.cymru.com', 43))
+    s.sendall(content.encode())
+    s.shutdown(socket.SHUT_WR)
+
+    response = ''
+    while True:
+      data = s.recv(4096)
+      if not data:
+        break
+      response += data.decode('utf8')
+
+  lines = response.splitlines()
+
+  networks = []
+
+  assert lines[0].startswith('Bulk mode')
+  for i, line in enumerate(lines[1:]):
+    network_string = line.split('|')[2].strip()
+    try:
+       networks.append(ipaddress.ip_network(network_string))
+    except ValueError as error:
+      logger.error("Invalid network '{network}' for address '{address}': {error}".format(network=network_string, address=addresses[i], error=error))
+      networks.append(addresses[i])
+
+  return networks
+
 if __name__ == '__main__':
   with urlopen(PROXY_PAC_URL) as request:
     proxy_pac = request.read().decode('utf8')
@@ -78,59 +119,8 @@ if __name__ == '__main__':
     return not (address.is_multicast or address.is_private or address.is_reserved or address.is_loopback or address.is_link_local)
 
   def rejected_addresses():
-    addresses_ipv4 = [
-      # OVH
-      ipaddress.IPv4Network('5.39.0.0/17'),
-      ipaddress.IPv4Network('158.69.0.0/16'),
-      # Akamai Technologies
-      ipaddress.IPv4NEtwork('2.22.64.0/20'),
-      ipaddress.IPv4NEtwork('23.0.0.0/12'),
-      ipaddress.IPv4Network('23.32.0.0/11'),
-      ipaddress.IPv4Network('23.64.0.0/14'),
-      ipaddress.IPv4Network('23.72.0.0/13'),
-      ipaddress.IPv4Network('23.192.0.0/11'),
-      ipaddress.IPv4Network('23.195.112.0/20'),
-      ipaddress.IPv4Network('96.6.0.0/15'),
-      ipaddress.IPv4Network('104.64.0.0/10'),
-      ipaddress.IPv4Network('173.222.0.0/15'),
-      ipaddress.IPv4Network('184.24.0.0/13'),
-      # Microsoft Corporation
-      ipaddress.IPv4Network('13.64.0.0/10'),
-      ipaddress.IPv4Network('23.96.0.0/13'),
-      # Amazon Technologies
-      ipaddress.IPv4Network('34.192.0.0/10'),
-      ipaddress.IPv4Network('50.16.0.0/14'),
-      ipaddress.IPv4Network('52.0.0.0/11'),
-      ipaddress.IPv4Network('52.32.0.0/11'),
-      ipaddress.IPv4Network('54.64.0.0/11'),
-      ipaddress.IPv4Network('52.84.0.0/14'),
-      ipaddress.IPv4Network('52.88.0.0/13'),
-      ipaddress.IPv4Network('52.192.0.0/11'),
-      ipaddress.IPv4Network('54.208.0.0/12'),
-      ipaddress.IPv4Network('54.224.0.0/12'),
-      # Linode
-      ipaddress.IPv4Network('45.33.0.0/17'),
-      # Yahoo
-      ipaddress.IPv4Network('69.147.64.0/18'),
-      # Fastly
-      ipaddress.IPv4Network('151.101.0.0/16'),
-      # Thomson Reuters
-      ipaddress.IPv4Network('159.220.0.0/16'),
-      # Leaseweb
-      ipaddress.IPv4Network('162.210.192.0/21'),
-      # Incapsula
-      ipaddress.IPv4Network('192.230.64.0/18'),
-      # NTT
-      ipaddress.IPv4Network('206.222.32.0/19'),
-      # Google
-      ipaddress.IPv4Network('216.58.192.0/19'),
-    ]
-    addresses_ipv6 = [
-      # Pantheon
-      ipaddress.IPv6Network('2620:12A:8000::/44'),
-      # Incapsula
-      ipaddress.IPv6Network('2a02:e980::/29'),
-    ]
+    addresses_ipv4 = []
+    addresses_ipv6 = []
 
     # We add both entries to proxy and entries not to proxy to the reject policy.
     # We do not want to allow tor exit to any of those Internet addresses.
@@ -150,15 +140,17 @@ if __name__ == '__main__':
       # We have to flatten resolved addresses.
       addresses = [address for resolved_addresses in pool.imap_unordered(resolve_domain, domains) for address in resolved_addresses]
 
-    addresses_ipv4 += [address for address in addresses if isinstance(address, ipaddress.IPv4Network)]
-    addresses_ipv6 += [address for address in addresses if isinstance(address, ipaddress.IPv6Network)]
-    
-    addresses_ipv4 = [address.supernet(new_prefix=24) if address.prefixlen > 24 else address for address in addresses_ipv4]
-    addresses_ipv6 = [address.supernet(new_prefix=48) if address.prefixlen > 48 else address for address in addresses_ipv6]
+    addresses_ipv4 += [address for address in addresses if isinstance(address, ipaddress.IPv4Network) and valid_address(address)]
+    addresses_ipv6 += [address for address in addresses if isinstance(address, ipaddress.IPv6Network) and valid_address(address)]
 
-    # Collapse and filter addresses.
-    addresses_ipv4 = [address for address in ipaddress.collapse_addresses(addresses_ipv4) if valid_address(address)]
-    addresses_ipv6 = [address for address in ipaddress.collapse_addresses(addresses_ipv6) if valid_address(address)]
+    addresses = resolve_networks(addresses_ipv4 + addresses_ipv6)
+
+    addresses_ipv4 = [address for address in addresses if isinstance(address, ipaddress.IPv4Network)]
+    addresses_ipv6 = [address for address in addresses if isinstance(address, ipaddress.IPv6Network)]
+
+    # Collapse addresses.
+    addresses_ipv4 = [address for address in ipaddress.collapse_addresses(addresses_ipv4)]
+    addresses_ipv6 = [address for address in ipaddress.collapse_addresses(addresses_ipv6)]
 
     return sorted(addresses_ipv4) + sorted(addresses_ipv6)
 
