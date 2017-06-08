@@ -84,6 +84,8 @@ if __name__ == '__main__':
       ipaddress.IPv4Network('5.39.0.0/17'),
       ipaddress.IPv4Network('158.69.0.0/16'),
       # Akamai Technologies
+      ipaddress.IPv4NEtwork('2.22.64.0/20'),
+      ipaddress.IPv4NEtwork('23.0.0.0/12'),
       ipaddress.IPv4Network('23.32.0.0/11'),
       ipaddress.IPv4Network('23.64.0.0/14'),
       ipaddress.IPv4Network('23.72.0.0/13'),
@@ -91,7 +93,11 @@ if __name__ == '__main__':
       ipaddress.IPv4Network('23.195.112.0/20'),
       ipaddress.IPv4Network('96.6.0.0/15'),
       ipaddress.IPv4Network('104.64.0.0/10'),
+      ipaddress.IPv4Network('173.222.0.0/15'),
       ipaddress.IPv4Network('184.24.0.0/13'),
+      # Microsoft Corporation
+      ipaddress.IPv4Network('13.64.0.0/10'),
+      ipaddress.IPv4Network('23.96.0.0/13'),
       # Amazon Technologies
       ipaddress.IPv4Network('34.192.0.0/10'),
       ipaddress.IPv4Network('50.16.0.0/14'),
@@ -105,12 +111,20 @@ if __name__ == '__main__':
       ipaddress.IPv4Network('54.224.0.0/12'),
       # Linode
       ipaddress.IPv4Network('45.33.0.0/17'),
+      # Yahoo
+      ipaddress.IPv4Network('69.147.64.0/18'),
+      # Fastly
+      ipaddress.IPv4Network('151.101.0.0/16'),
+      # Thomson Reuters
+      ipaddress.IPv4Network('159.220.0.0/16'),
       # Leaseweb
       ipaddress.IPv4Network('162.210.192.0/21'),
-      # Google
-      ipaddress.IPv4Network('216.58.192.0/19'),
       # Incapsula
       ipaddress.IPv4Network('192.230.64.0/18'),
+      # NTT
+      ipaddress.IPv4Network('206.222.32.0/19'),
+      # Google
+      ipaddress.IPv4Network('216.58.192.0/19'),
     ]
     addresses_ipv6 = [
       # Pantheon
