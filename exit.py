@@ -57,48 +57,59 @@ shexps_to_never_proxy = convert_value(find_assignment_to(parsed_proxy_pac, 'shex
 domains_to_proxy = convert_value(find_assignment_to(parsed_proxy_pac, 'domains_to_proxy'))
 shexps_to_proxy = convert_value(find_assignment_to(parsed_proxy_pac, 'shexps_to_proxy'))
 
-tor_exit_policy_reject_ipv4 = []
-tor_exit_policy_reject_ipv6 = []
+def rejected_addresses():
+  tor_exit_policy_reject_ipv4 = []
+  tor_exit_policy_reject_ipv6 = []
 
-already_added_domains = []
-def add_domain_to_policy(hostname):
-  if hostname in already_added_domains:
-    return
+  already_added_domains = []
+  def add_domain_to_policy(hostname):
+    if hostname in already_added_domains:
+      return
 
-  try:
-    for family, type, proto, canonname, sockaddr in socket.getaddrinfo(host=hostname, port=None, type=socket.SOCK_STREAM, proto=socket.IPPROTO_TCP):
-      if family == socket.AF_INET:
-        tor_exit_policy_reject_ipv4.append(ipaddress.IPv4Network(sockaddr[0]))
-      elif family == socket.AF_INET6:
-        tor_exit_policy_reject_ipv6.append(ipaddress.IPv6Network(sockaddr[0]))
-  except socket.gaierror as error:
-    logger.info("Cannot resolve '{hostname}': {error}".format(hostname=hostname, error=error))
+    try:
+      for family, type, proto, canonname, sockaddr in socket.getaddrinfo(host=hostname, port=None, type=socket.SOCK_STREAM, proto=socket.IPPROTO_TCP):
+        if family == socket.AF_INET:
+          tor_exit_policy_reject_ipv4.append(ipaddress.IPv4Network(sockaddr[0]))
+        elif family == socket.AF_INET6:
+          tor_exit_policy_reject_ipv6.append(ipaddress.IPv6Network(sockaddr[0]))
+    except socket.gaierror as error:
+      logger.info("Cannot resolve '{hostname}': {error}".format(hostname=hostname, error=error))
 
-  already_added_domains.append(hostname)
+    already_added_domains.append(hostname)
 
-# We add both entries to proxy and entries not to proxy to the reject policy.
-# We do not want to allow tor exit to any of those Internet addresses.
+  # We add both entries to proxy and entries not to proxy to the reject policy.
+  # We do not want to allow tor exit to any of those Internet addresses.
 
-for address, mask in ips_to_never_proxy:
-  # Two-tuple form for the address constructor parameter was added in Python 3.5.
-  tor_exit_policy_reject_ipv4.append(ipaddress.IPv4Network((address, mask)))
+  for address, mask in ips_to_never_proxy:
+    # Two-tuple form for the address constructor parameter was added in Python 3.5.
+    tor_exit_policy_reject_ipv4.append(ipaddress.IPv4Network((address, mask)))
 
-for shexps in shexps_to_never_proxy:
-  add_domain_to_policy(urlparse(shexps).hostname)
+  for shexps in shexps_to_never_proxy:
+    add_domain_to_policy(urlparse(shexps).hostname)
 
-for domain in domains_to_proxy:
-  add_domain_to_policy(domain)
+  for domain in domains_to_proxy:
+    add_domain_to_policy(domain)
 
-for shexps in shexps_to_proxy:
-  add_domain_to_policy(urlparse(shexps).hostname)
+  for shexps in shexps_to_proxy:
+    add_domain_to_policy(urlparse(shexps).hostname)
 
-for address in sorted(ipaddress.collapse_addresses(tor_exit_policy_reject_ipv4)):
-  # Some DNS entries resolve to invalid addresses. Filter some of them out.
-  if address.is_multicast or address.is_private or address.is_reserved or address.is_loopback or address.is_link_local:
-    continue
-  print('reject {address}:*'.format(address=address))
-for address in sorted(ipaddress.collapse_addresses(tor_exit_policy_reject_ipv6)):
-  # Some DNS entries resolve to invalid addresses. Filter some of them out.
-  if address.is_multicast or address.is_private or address.is_reserved or address.is_loopback or address.is_link_local:
-    continue
-  print('reject6 [{address}]/{mask}:*'.format(address=address.network_address, mask=address.prefixlen))
+  for address in sorted(ipaddress.collapse_addresses(tor_exit_policy_reject_ipv4)):
+    # Some DNS entries resolve to invalid addresses. Filter some of them out.
+    if address.is_multicast or address.is_private or address.is_reserved or address.is_loopback or address.is_link_local:
+      continue
+    yield address
+
+  for address in sorted(ipaddress.collapse_addresses(tor_exit_policy_reject_ipv6)):
+    # Some DNS entries resolve to invalid addresses. Filter some of them out.
+    if address.is_multicast or address.is_private or address.is_reserved or address.is_loopback or address.is_link_local:
+      continue
+    yield address
+
+for address in rejected_addresses():
+  if isinstance(address, ipaddress.IPv4Network):
+    print('reject {address}:*'.format(address=address))
+  elif isinstance(address, ipaddress.IPv6Network):
+    print('reject6 [{address}]/{mask}:*'.format(address=address.network_address, mask=address.prefixlen))
+  else:
+    raise TypeError("Unknown address type: {address}".format(address=address))
+
