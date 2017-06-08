@@ -116,18 +116,18 @@ if __name__ == '__main__':
 
   # Some DNS entries resolve to invalid addresses. Filter some of them out.
   def valid_address(address):
+    # Private IPs are rejected by Tor by default.
     return not (address.is_multicast or address.is_private or address.is_reserved or address.is_loopback or address.is_link_local)
 
   def rejected_addresses():
-    addresses_ipv4 = []
-    addresses_ipv6 = []
+    addresses = []
 
     # We add both entries to proxy and entries not to proxy to the reject policy.
     # We do not want to allow tor exit to any of those Internet addresses.
 
     for address, mask in ips_to_never_proxy:
       # Two-tuple form for the address constructor parameter was added in Python 3.5.
-      addresses_ipv4.append(ipaddress.IPv4Network((address, mask)))
+      addresses.append(ipaddress.IPv4Network((address, mask)))
 
     domains = []
     for shexps in shexps_to_never_proxy:
@@ -138,19 +138,18 @@ if __name__ == '__main__':
 
     with multiprocessing.Pool(PARALLELISM) as pool:
       # We have to flatten resolved addresses.
-      addresses = [address for resolved_addresses in pool.imap_unordered(resolve_domain, domains) for address in resolved_addresses]
+      addresses += [address for resolved_addresses in pool.imap_unordered(resolve_domain, domains) for address in resolved_addresses]
 
-    addresses_ipv4 += [address for address in addresses if isinstance(address, ipaddress.IPv4Network) and valid_address(address)]
-    addresses_ipv6 += [address for address in addresses if isinstance(address, ipaddress.IPv6Network) and valid_address(address)]
+    addresses = [address for address in addresses if valid_address(address)]
 
-    addresses = resolve_networks(addresses_ipv4 + addresses_ipv6)
+    addresses = resolve_networks(addresses)
 
     addresses_ipv4 = [address for address in addresses if isinstance(address, ipaddress.IPv4Network)]
     addresses_ipv6 = [address for address in addresses if isinstance(address, ipaddress.IPv6Network)]
 
     # Collapse addresses.
-    addresses_ipv4 = [address for address in ipaddress.collapse_addresses(addresses_ipv4)]
-    addresses_ipv6 = [address for address in ipaddress.collapse_addresses(addresses_ipv6)]
+    addresses_ipv4 = ipaddress.collapse_addresses(addresses_ipv4)
+    addresses_ipv6 = ipaddress.collapse_addresses(addresses_ipv6)
 
     return sorted(addresses_ipv4) + sorted(addresses_ipv6)
 
